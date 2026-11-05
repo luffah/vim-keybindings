@@ -1,0 +1,229 @@
+*keybindings.vim*    Vim lib complex keybind definitions
+                                                                 *keybindings*
+License:     GPL (see http://www.gnu.org/licenses/gpl.txt)
+Author(s):   luffah (luffah AT runbox com)
+Revision:    5
+Last Change: 2026-05-17
+
+Define keybindings and aliases described in vimkm files
+(see |keybindings-format|) allowing oneshot layers, toggle layers,
+aliases and documented mappings.
+Use :call keybindings#Source('path/to/file.vimkm')
+
+==============================================================================
+CONTENTS                                                *keybindings-contents*
+
+1. File format                                        |keybindings-fileformat|
+2. Functions                                           |keybindings-functions|
+3. Commands                                             |keybindings-commands|
+4. Globals                                               |keybindings-globals|
+
+==============================================================================
+FILE FORMAT                                           *keybindings-fileformat*
+
+*keybindings-format*
+Note: For readability, post-actions and modes from hash no more exists.
+Given :
+ * keybind(s) is a list of keybinds (separated by a ' ', use '<space>' for a space)
+   [keyinds are as defined for *:map* {rhs}]
+ * Comment is an human description of the action
+ * Action is a sequence of keys as it was typed [as defined for *:map* {rhs}]
+ * Mode(s) is a list (separated by a ',') of:
+   * Mode is an explicit *map-modes* in n,v,s,x,o,i,l,c,t (all except map and map!)
+     followed by additionnal keys to be hitted to access some editing state.
+     Some examples here :
+      * the keybind is defined for normal mode but you want it to be useable
+      in insert mode,
+        use km(i<C-o>,n) [<C-o> go to normal mode and return to insert mode]
+         or km(i<Esc>,n) [<Esc> leave insert mode for normal mode]
+ * keywords you can use (at the start of the line) are:
+   * km(..)         for keybinding definition
+   * km:for name in [v_1, v_2]
+   * km:for [name1, name2] in [[v_1_1, v_1_2], ..]
+   * km:for [..] in function_call(..)
+                    to loop over definition with variants
+   * km:endfor      to end the loop context
+   * alias          for (command line) alias
+   * alias:if       to add condition on alias
+   * alias:endif    to end the conditional context
+
+The short format to define keymaps is the following. >
+ "mode(s)       keybind(s)  "Comment"        Action
+ km(c,v)      <F1>       "Cleared key"       <nop>
+ km(c,v)      <F2> <F3>  "Cleared keys"      <nop>
+ km(i)        <A-Up>     "Complete/select"   <expr>pumvisible()?"<KeyBind>":"<C-x><C-i>"
+ km(n,i<C-o>) <A-t>      "Cycle tab"         gt
+
+ km:for l:k in ['Up', 'Down', 'Left', 'Right']
+ km(i<c-o>,n) <S-{l:k}>       "Enter Visual"                   v
+ km(v)        <S-{l:k}>       "Visual selection (arrow)"       <{l:k}>
+ km:endfor
+
+ " Filetype rules example
+ autocmd FileType python
+ km(c,i)                 "No invisible space" <Space>
+ autocmd
+
+ " COMMAND LINE SPECIFIC
+ " Aliases abbreviation 
+ alias qa confirm qa
+ alias tnn <cmap> <expand> tabnew %:p:h/<C-d>
+ alias <A-v> <cmap> <inline> \\%V
+ " options shall appear the order it is described below:
+ "
+ "  <?map>      normally <cmap>, to use key binding instead of abbreviation
+ "              (vim specific)
+ "              - abbreviation let you show what you type before resolution
+ "              - keybinding (map) hide characters until the resolution
+ "
+ "  <expand>    use expand() on each word to expand the words (<cword> or %:p)
+ "
+ "  <inline>    instead of resolving the alias at the start of line only
+ "              allow resolution in middle of line (like standard abbrev)
+ "
+ "  <expr>      to use vim functions to fill the content
+
+ " In the right part you can invoke special behavior with
+ "  <C-r>= <cr>  use function register
+ "  <C-d>        **c_CTRL-D** to list names of matching a pattern
+
+ " Expanded abbreviation  (equivalent of alias <expand> <inline>)
+ expand %%  %:p:h/
+
+ " alias and expand can be sourrouned by a condition in order to limit the
+ " impact of the abbreviation
+ alias:if (&ft != 'vim')
+ alias so% echo 'Cannot source '.&ft
+ alias:endif
+
+<
+See ./samples/ to get many examples.
+
+
+*keymap-inception* 
+You can nest |keybindings-format| in a vim script.
+In order to do that, the script part shall be at file beginning
+and be surrounded by `if 0 | endif` and `finish`. >
+These to word ensure the script part is ignored while loading the keybindings.
+     if 0 | endif
+     call keybindings#Source(expand('<sfile>'))
+     finish
+     Q        "Cleared key" <nop> % n
+<
+
+For more advanced use, calling the function is required. >
+     if 0 | endif
+      function! s:RemovePathComponent()
+          let l:cmdlineBeforeCursor = strpart(getcmdline(), 0, getcmdpos() - 1)
+          let l:cmdlineAfterCursor = strpart(getcmdline(), getcmdpos() - 1)
+
+          let l:cmdlineRoot = fnamemodify(cmdlineBeforeCursor, ':r')
+          let l:result = (l:cmdlineBeforeCursor ==# l:cmdlineRoot ?
+                \ substitute(l:cmdlineBeforeCursor, '\%(\\ \|[\\/]\@!\f\)\+[\\/]\=$\|.$', '', '')
+                \ : l:cmdlineRoot)
+          call setcmdpos(strlen(l:result) + 1)
+          return l:result . l:cmdlineAfterCursor
+      endfunction
+     " substitutions to shorten keybinding definition
+     let s:substs=[
+     \ ['pum?', '<expr>pumvisible()?', '']
+     \]
+
+     " include sid is for using the previously defined function
+     let s:include_sid = 1
+
+     call keybindings#Source(expand('<sfile>'), s:substs, s:include_sid)
+     finish
+     km(i) <A-Up>    "Compl.from file    "    pum?"<UP>":"<C-x><C-i>"
+     km(c) <C-h>     "RemovePathComponent"   <C-\>e(<SID>RemovePathComponent())<CR>
+<
+
+
+==============================================================================
+FUNCTIONS                                              *keybindings-functions*
+
+keybindings#PrintLayer(layer)                      *keybindings#PrintLayer()*
+    Shows a formated layer Description
+
+keybindings#PrintCurrentLayer()             *keybindings#PrintCurrentLayer()*
+    Shows current keybind layer.
+
+keybindings#ToggleLayer()                         *keybindings#ToggleLayer()*
+    Switch to an other keymap layer
+    :param layer: the layer name (unique indentifier)
+
+keybindings#Map(name, keybinds, action, modes_and_post_actions)
+                                                           *keybindings#Map()*
+    Assign keybindings with these arguments
+    - name   required for info e.g. 'Save the file', 
+    - keybind or keybind list e.g. '<C-s>', ['<C-s>','<C-S'>]
+    - action                   e.g. ':w<CR>',
+    - list of mode (1st char) and action to prepare mode 
+    e.g. 'i<Esc>' -> for insert mode going to normal mode
+    If action contains one of the following keyword, it will be modified :
+      <Mode>        -> the current mode char ('i', 'v', ...) as defined
+      <Keybind>     -> the keybinding
+      <ActionName>  -> the name of the action
+      <LayerName>   -> the current layer name
+    See **g:keybindings#Source** for more substitutions
+
+keybindings#export()                                   *keybindings#export()*
+    export for a faster boot and lighter memory usage
+    without dependencies
+    and to share your keymap
+
+keybindings#LowercaseAliasesForCommand(...)
+                                    *keybindings#LowercaseAliasesForCommand()*
+    Creation aliases for commands in args.
+    If more than one word is provided, then characters '!%/ ' are removed.
+    Example: call keybindings#LowercaseAliasesForCommand('Info', 'Info info', 's/first/second/', '!date')
+             will create aliases : info, infoinfo, sfirstsecond, date
+
+keybindings#Alias(alias, cmd, options = {})             *keybindings#Alias()*
+    Creation alias for command. 
+    Options opts a dictionnary with possible keys :
+    - autocmd     : str default empty : autocmd to define the alias in a specific context
+    - if          : str default empty : expression to validate in order to expand
+    - append_expr : str default empty : expression to call when expanding
+    - append      : str default empty : string to add after expansion
+    - keymap_type : char default 'c' : 'c' or 'i'
+    - do_expand   : bool default false : if true, try to expands variables in command
+    - is_inline   : bool default false : if false, the alias only expand at start of the line
+    - is_expr     : bool default false : if true, treat command as vim expression
+    - is_keymap   : bool default false : if true, use 'map' insteand of 'abbrev' 
+    Example: call keybindings#Alias('help', 'Help info', {})
+
+Keymap#Source([file], (opt) [substs], (opt) include_sid)    *Keymap#Source()*
+    Source [file] according to the |keybindings-format|.
+    
+    Below, an example for substs and to use <SID> keyword in file loaded:
+    let s:substs=[
+          \ ['getregid("\([^"]*\)")', 'echo "Register \1?"  | let reg=nr2char(getchar()) | echo reg', 'g'],
+          \ ['pum?', '<expr>pumvisible()?', '']
+          \]
+    call keybindings#Source(expand('<sfile>'), s:substs, 1)
+
+
+==============================================================================
+COMMANDS                                                *keybindings-commands*
+
+*:Layer* [layer_name]
+    Toggle [layer_name].
+
+*:Layers*
+    List possible values for |:Layer|.
+
+
+==============================================================================
+GLOBALS                                                  *keybindings-globals*
+
+*g:km_layer_status*
+    Layer status string.
+    If you customize your statusline your could need to add : >
+      let &statusline="%#ModeMsg#%{g:km_layer_status}%#{}#".&statusline
+<
+
+*g:km_status_substitions*
+    Representation of the mode in the status bar
+
+vim:tw=78:ts=8:ft=help:norl:
